@@ -1,11 +1,14 @@
 ﻿using AzureFunctionsTodo.DTOs;
+using AzureFunctionsTodo.Models;
 using AzureFunctionsTodo.Services;
+using Grpc.Core;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 
@@ -91,6 +94,106 @@ namespace AzureFunctionsTodo
                 
             }
         }
+
+        [Function("GetAllTodos")]
+        public async Task<HttpResponseData> GetAllTodos(
+            [HttpTrigger(AuthorizationLevel.Function, "get", Route ="todos")] HttpRequestData req, FunctionContext functionContext)
+        {
+            var logger = functionContext.GetLogger("TodoFunctions");
+
+            try
+            {
+                logger.LogInformation("Getting all todo items");
+                var todos = await _todoService.GetAllTodosAsync();
+
+                var response = req.CreateResponse(HttpStatusCode.OK);
+                await response.WriteAsJsonAsync(todos ?? new List<ToDoItem>());
+                return response; 
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error getting todo items");
+                var error = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await error.WriteStringAsync("Error getting all the todos");
+                return error;
+            }
+        }
+
+        [Function("UpdateTodo")]
+        public async Task<HttpResponseData> UpdateTodo(
+            [HttpTrigger(AuthorizationLevel.Function, "put", Route = "todos/{id}")] HttpRequestData req, string id, FunctionContext functionContext)
+        {
+            var logger = functionContext.GetLogger("TodoFunctions");
+
+            try
+            {
+                logger.LogInformation($"Updating todo item with id: {id}");
+
+                using var reader = new StreamReader(req.Body);
+                var requestBody = await reader.ReadToEndAsync();
+
+                var request = JsonSerializer.Deserialize<UpdateTodoRequestDto>(requestBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                if (request == null || string.IsNullOrEmpty(request.Title))
+                {
+                    var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
+                    await badResponse.WriteStringAsync("Title is requred");
+                    return badResponse;
+                }
+
+                var updated = await _todoService.UpdateTodoAsync(id, request);
+
+                if(updated == null)
+                {
+                    var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+                    await notFound.WriteStringAsync($"Todo with id {id} not found");
+                    return notFound; 
+                }
+
+                var response = req.CreateResponse(HttpStatusCode.OK);
+                await response.WriteAsJsonAsync(updated);
+                return response; 
+
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error updating todo items");
+                var error = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await error.WriteStringAsync("Error updating the todo item");
+                return error;
+            }
+        }
+
+        [Function("DeleteTodo")]
+        public async Task<HttpResponseData> DeleteTodo(
+            [HttpTrigger(AuthorizationLevel.Function, "delete", Route ="todos/{id}")] HttpRequestData req, string id, FunctionContext functionContext)
+        {
+            var logger = functionContext.GetLogger("TodoFunctions");
+            try
+            {
+                logger.LogInformation($"Deleting todo item with id: {id}");
+
+                var deleted = await _todoService.DeleteTodoAsync(id);
+
+                if (!deleted)
+                {
+                    var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+                    await notFound.WriteStringAsync($"Todo with id {id} not found");
+                    return notFound;
+                }
+
+                var response = req.CreateResponse(HttpStatusCode.NoContent);
+                return response; 
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error deleting todo item");
+                var error = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await error.WriteStringAsync("Error deleting the todo item");
+                return error;
+            }
+        }
+
 
     }
 }
