@@ -45,7 +45,7 @@ namespace AzureFunctionsTodo
 
                 var todo = await _todoService.CreateTodoAsync(request);
 
-                var response = req.CreateResponse(HttpStatusCode.OK);
+                var response = req.CreateResponse(HttpStatusCode.Created);
                 await response.WriteAsJsonAsync(todo);
 
                 return response; 
@@ -57,6 +57,38 @@ namespace AzureFunctionsTodo
                 await errorResponse.WriteStringAsync("Something went wrong when trying to create a todo item");
                 return errorResponse; 
 
+            }
+        }
+
+        [Function("GetTodo")]
+        public async Task<HttpResponseData> GetTodo(
+            [HttpTrigger(AuthorizationLevel.Function, "get", Route ="todos/{id}")] HttpRequestData req, string id, FunctionContext functionContext)
+        {
+            var logger = functionContext.GetLogger("TodoFunctions");
+            try
+            {
+                logger.LogInformation($"Getting todo item with id: {id}");
+
+                var todo = await _todoService.GetTodoAsync(id);
+
+                if(todo == null)
+                {
+                    var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+                    await notFound.WriteStringAsync($"Todo with id {id} not found");
+                    return notFound;
+                }
+
+                var response = req.CreateResponse(HttpStatusCode.OK);
+                await response.WriteAsJsonAsync(todo);
+                return response; 
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error getting todo item");
+                var error = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await error.WriteStringAsync("Couldn't find todo item");
+                return error; 
+                
             }
         }
 
